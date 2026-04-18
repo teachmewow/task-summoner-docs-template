@@ -1,0 +1,26 @@
+# task-summoner docs config
+#
+# This file makes the repo self-describing: the task-summoner harness reads it
+# to locate docs and to know how to render architecture diagrams. A fork of
+# this template can override any of these keys without changing the harness.
+
+docs_paths:
+  # Where per-issue RFCs live. Convention: <rfcs>/<issue-id>/README.md
+  rfcs: rfcs
+  # Architecture Decision Records (ADRs). Append-only, dated.
+  decisions: decisions
+  # C4 model sources (Structurizr DSL) + rendered PNGs.
+  c4s: c4s
+
+render:
+  # Source DSL for architecture diagrams. Currently only "structurizr" is supported.
+  dsl: structurizr
+
+  # Command that exports a .dsl workspace to C4-PlantUML .puml files.
+  # Placeholders:
+  #   {input}       — path to the .dsl file
+  #   {output_dir}  — directory where .puml files should be written
+  export_command: "docker run --rm -v \"$PWD\":/work -w /work structurizr/structurizr:latest export -w {input} -f plantuml/c4plantuml -o {output_dir}"
+
+  # Command that rasterises every structurizr-*.puml in {output_dir} to PNG.
+  png_command: "docker run --rm -v \"$PWD/{output_dir}\":/work -w /work plantuml/plantuml:latest -tpng 'structurizr-*.puml'"
