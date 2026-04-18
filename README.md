@@ -35,6 +35,21 @@ on the repo page.
 Both produce a fresh repo with this structure and a single initial
 commit (no history from the template).
 
+## Built-in guardrails
+
+Every fork inherits three GitHub Actions that run on pull requests. They
+are intentionally minimal and work on a fresh fork with no extra
+configuration.
+
+| Action | What it does |
+|--------|--------------|
+| [`render-diagrams.yml`](.github/workflows/render-diagrams.yml) | When a PR changes any `.dsl`, re-renders it to PNG and fails if the committed PNG drifts from the source. Rendered PNGs are attached as artifacts for download. |
+| [`gitleaks.yml`](.github/workflows/gitleaks.yml) | Scans the PR diff for committed secrets (API keys, tokens, private keys). Fails on detection. See [Secrets scanning](#secrets-scanning). |
+| [`dep-audit.yml`](.github/workflows/dep-audit.yml) | Runs `pip-audit` and/or `npm audit` depending on which manifests exist. Fails on HIGH or CRITICAL advisories. See [Dependency auditing](#dependency-auditing). |
+
+To disable any Action on your fork, delete its workflow file (or gate it
+behind a conditional — see each file's comments).
+
 ## Repo structure
 
 ```
@@ -48,7 +63,11 @@ c4s/
   README.md                   # master Structurizr models per system
 .github/
   PULL_REQUEST_TEMPLATE.md    # Context / Decision / Evidence
-  workflows/                  # render-diagrams.yml lands here (see ENG-97)
+  workflows/                  # render-diagrams.yml, gitleaks.yml, dep-audit.yml
+  audit-ignores.yml           # per-repo suppressions for dep-audit
+  dependabot.yml              # weekly dep update PRs
+.gitleaks.toml                # allowlist for the secret scanner
+.pre-commit-config.yaml       # local gitleaks hook
 README.md
 ```
 
@@ -135,6 +154,52 @@ task-summoner config set docs_repo <absolute-path-to-your-fork>
 > The CLI side of this is tracked as **ENG-94**. Until that ships, the
 > harness falls back to the default docs repo configured at the org
 > level.
+
+### Secrets scanning
+
+[`gitleaks.yml`](.github/workflows/gitleaks.yml) runs on every PR and
+blocks merging if it finds anything that looks like a credential. A
+matching [pre-commit hook](.pre-commit-config.yaml) runs the same
+scanner locally so most leaks never reach CI.
+
+Install the local hook once per clone:
+
+```bash
+pip install pre-commit
+pre-commit install
+```
+
+**Suppressing false positives.** If gitleaks flags something that is
+genuinely not a secret (e.g. a fixture value, an example in docs), add
+an entry to [`.gitleaks.toml`](.gitleaks.toml). The allowlist supports
+paths, regexes, and specific commit SHAs. Keep suppressions narrow —
+the default ruleset has near-zero false positives, so a new exception
+usually indicates either a real leak or a truly unusual file.
+
+If a real secret did land in history, rotate it first, then scrub
+history with `git filter-repo` (separate workflow, not covered here).
+
+### Dependency auditing
+
+[`dep-audit.yml`](.github/workflows/dep-audit.yml) gates PRs on
+vulnerable dependencies. It runs:
+
+- **`pip-audit`** — if the repo has `pyproject.toml` or
+  `requirements.txt`. Fails on HIGH or CRITICAL advisories.
+- **`npm audit --production --audit-level=high`** — if the repo has
+  `package.json`. Fails on HIGH or CRITICAL advisories.
+
+The workflow auto-detects which ecosystems apply, so a Python-only or
+Node-only fork does not run the other tool.
+
+[`.github/dependabot.yml`](.github/dependabot.yml) opens weekly
+dependency-update PRs so advisories get patched before they compound.
+
+**Suppressing advisories.** Add an entry to
+[`.github/audit-ignores.yml`](.github/audit-ignores.yml) with the
+advisory ID, the affected package, a rationale, and an expiry date.
+The workflow will skip those IDs when deciding whether to fail. Every
+entry should be reviewed at least quarterly.
 
 ## Why these conventions
 
